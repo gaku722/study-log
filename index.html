@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V-Sync Downloader for Google Sites</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen pb-20">
+
+    <!-- ナビゲーション -->
+    <nav class="bg-white border-b px-6 h-16 flex items-center justify-between sticky top-0 z-50">
+        <div class="flex items-center gap-2">
+            <div class="bg-red-600 p-1.5 rounded-lg shadow-lg">
+                <i data-lucide="youtube" class="text-white w-5 h-5"></i>
+            </div>
+            <h1 class="font-black text-xl tracking-tight">V-Sync <span class="text-slate-400 font-normal">Downloader</span></h1>
+        </div>
+        <div id="auth-status" class="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+            <i data-lucide="shield-check" class="text-green-500 w-3 h-3"></i> ONLINE
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto px-4 py-10">
+        <!-- メイン入力 -->
+        <div class="max-w-2xl mx-auto text-center mb-12">
+            <h2 class="text-4xl font-black mb-4 text-slate-800 tracking-tight">動画を保存して共有</h2>
+            <p class="text-slate-500 mb-8 text-sm">URLを貼り付けて解析。共有用URLを使えば他のデバイスでも同じ動画が開きます。</p>
+            
+            <form id="analyze-form" class="relative group">
+                <input
+                    type="text"
+                    id="url-input"
+                    class="w-full p-6 pl-14 bg-white border-2 border-slate-100 shadow-xl rounded-3xl outline-none focus:border-red-500 transition-all text-lg"
+                    placeholder="YouTubeのURLをペースト..."
+                >
+                <i data-lucide="search" class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 w-6 h-6"></i>
+                <button
+                    type="submit"
+                    id="analyze-btn"
+                    class="absolute right-3 top-3 bottom-3 px-8 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 flex items-center gap-2"
+                >
+                    <span id="btn-text">解析</span>
+                </button>
+            </form>
+            <p id="error-msg" class="mt-4 text-red-500 text-sm font-bold hidden flex items-center justify-center gap-2"></p>
+        </div>
+
+        <!-- 結果表示エリア -->
+        <div id="result-area" class="hidden grid lg:grid-cols-12 gap-8 animate-in zoom-in-95 duration-500">
+            <!-- プレーヤー側 -->
+            <div class="lg:col-span-7 space-y-4">
+                <div class="bg-white p-2 rounded-[2.5rem] shadow-2xl border border-slate-100">
+                    <div class="aspect-video bg-black rounded-[2rem] overflow-hidden relative shadow-inner">
+                        <iframe
+                            id="video-player"
+                            src=""
+                            class="w-full h-full"
+                            frameborder="0"
+                            allow="autoplay; encrypted-media"
+                            allowfullscreen
+                        ></iframe>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col gap-3">
+                    <button 
+                        id="copy-btn"
+                        class="w-full py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95"
+                    >
+                        <i data-lucide="copy" class="w-4 h-4"></i>
+                        <span id="copy-text">スマホ共有用URLをコピー</span>
+                    </button>
+                    <a 
+                        id="direct-link"
+                        href="" 
+                        target="_blank" 
+                        class="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-lg"
+                    >
+                        <i data-lucide="youtube" class="text-red-500 w-5 h-5"></i>
+                        エラー(153)が出る場合はYouTubeで直接開く
+                    </a>
+                </div>
+            </div>
+
+            <!-- ダウンロード側 -->
+            <div class="lg:col-span-5 space-y-6">
+                <div class="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+                    <h3 class="font-black text-2xl mb-6 flex items-center gap-2">
+                        <i data-lucide="download" class="text-red-600 w-6 h-6"></i> 保存
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <button onclick="download('720')" class="w-full flex items-center justify-between p-4 bg-white border-2 border-slate-50 rounded-2xl hover:border-red-100 hover:bg-red-50 transition-all group active:scale-95 shadow-sm text-left">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-white group-hover:text-red-500 border shadow-inner">
+                                    <i data-lucide="film" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-slate-800 text-sm">動画をダウンロード (MP4)</div>
+                                    <div class="text-[10px] text-slate-400 font-bold uppercase">720p HD Quality</div>
+                                </div>
+                            </div>
+                            <i data-lucide="external-link" class="text-slate-300 w-4 h-4"></i>
+                        </button>
+                        <button onclick="download('mp3')" class="w-full flex items-center justify-between p-4 bg-white border-2 border-slate-50 rounded-2xl hover:border-red-100 hover:bg-red-50 transition-all group active:scale-95 shadow-sm text-left">
+                            <div class="flex items-center gap-4">
+                                <div class="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-white group-hover:text-red-500 border shadow-inner">
+                                    <i data-lucide="music" class="w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-slate-800 text-sm">音楽をダウンロード (MP3)</div>
+                                    <div class="text-[10px] text-slate-400 font-bold uppercase">High Fidelity Audio</div>
+                                </div>
+                            </div>
+                            <i data-lucide="external-link" class="text-slate-300 w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <div class="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-2xl">
+                        <p class="text-[10px] text-blue-600 leading-relaxed font-bold">
+                            【ヒント】別サイトが開いたら10秒ほど待ってください。「Download」ボタンが青くなったら保存可能です。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 履歴セクション -->
+                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <i data-lucide="history" class="w-4 h-4"></i> 最近の解析履歴
+                    </h4>
+                    <div id="history-list" class="space-y-2">
+                        <!-- 履歴がここに動的に追加される -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 1. Firebase初期設定
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'yt-sync-app';
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let currentUrl = "";
+
+        // 2. 認証処理 (RULE 3)
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+            } catch (err) {
+                console.error("Auth error:", err);
+            }
+        }
+
+        auth.onAuthStateChanged((user) => {
+            currentUser = user;
+            if (user) {
+                loadHistory();
+                checkUrlParams();
+            }
+        });
+
+        // 3. 履歴の読み込み (RULE 1 & 2)
+        function loadHistory() {
+            const historyCol = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('search_history');
+            historyCol.onSnapshot((snapshot) => {
+                const items = snapshot.docs.map(d => d.data());
+                // フロント側でソート
+                const sorted = items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 6);
+                const list = document.getElementById('history-list');
+                list.innerHTML = '';
+                sorted.forEach(item => {
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left p-3 hover:bg-slate-50 rounded-xl border border-transparent hover:border-slate-100 transition-all text-xs font-bold text-slate-600 flex justify-between items-center group";
+                    btn.innerHTML = `<span class="truncate mr-2">ID: ${item.id}</span><i data-lucide="play" class="text-slate-300 group-hover:text-red-500 w-3 h-3"></i>`;
+                    btn.onclick = () => {
+                        document.getElementById('url-input').value = item.url;
+                        analyze(item.url);
+                    };
+                    list.appendChild(btn);
+                });
+                lucide.createIcons();
+            });
+        }
+
+        // 4. 解析処理
+        async function analyze(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+            const id = match ? match[1] : null;
+
+            if (!id) {
+                const err = document.getElementById('error-msg');
+                err.innerText = "正しいYouTubeのURLを入力してください。";
+                err.classList.remove('hidden');
+                return;
+            }
+
+            currentUrl = url;
+            document.getElementById('error-msg').classList.add('hidden');
+            document.getElementById('btn-text').innerHTML = '<div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+
+            // Firebase保存 (RULE 1)
+            if (currentUser) {
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('search_history').doc(id).set({
+                        id: id,
+                        url: url,
+                        timestamp: Date.now()
+                    });
+                } catch (err) { console.error("Save failed:", err); }
+            }
+
+            // 表示更新
+            setTimeout(() => {
+                document.getElementById('btn-text').innerText = "解析";
+                document.getElementById('video-player').src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0`;
+                document.getElementById('direct-link').href = `https://www.youtube.com/watch?v=${id}`;
+                document.getElementById('result-area').classList.remove('hidden');
+                lucide.createIcons();
+            }, 800);
+        }
+
+        // 5. ダウンロード
+        window.download = function(format) {
+            if (!currentUrl) return;
+            window.open(`https://loader.to/api/button/?url=${encodeURIComponent(currentUrl)}&f=${format}`, '_blank');
+        };
+
+        // イベントリスナー
+        document.getElementById('analyze-form').onsubmit = (e) => {
+            e.preventDefault();
+            analyze(document.getElementById('url-input').value);
+        };
+
+        document.getElementById('copy-btn').onclick = () => {
+            const textArea = document.createElement("textarea");
+            textArea.value = window.location.href;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            const btnText = document.getElementById('copy-text');
+            btnText.innerText = "リンクをコピーしました！";
+            setTimeout(() => btnText.innerText = "スマホ共有用URLをコピー", 2000);
+        };
+
+        function checkUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            const v = params.get('v');
+            if (v && v.length === 11) {
+                const fullUrl = `https://www.youtube.com/watch?v=${v}`;
+                document.getElementById('url-input').value = fullUrl;
+                analyze(fullUrl);
+            }
+        }
+
+        // 初期化実行
+        initAuth();
+        lucide.createIcons();
+    </script>
+</body>
+</html>
